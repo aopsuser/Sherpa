@@ -11,7 +11,7 @@ import {
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Zap, Globe, ChevronLeft, ChevronRight, RotateCw, Home, Bot, X, PauseCircle, BrainCircuit, GraduationCap, Eye, Code, Mic } from 'lucide-react-native';
 
-const GEMINI_API_KEY = "GEMINI_API_KEY"; 
+const GEMINI_API_KEY = "GEMINI_API_KEY_HERE"; 
 
 export default function AIWebAgentApp() {
   const [url, setUrl] = useState('https://www.google.com');
@@ -147,22 +147,27 @@ export default function AIWebAgentApp() {
           GOAL: "${goal}".
           
           Look at the attached screenshot of the mobile web browser.
-          Find the interactive element (button, link, input field) needed to progress towards the goal.
+          
+          CRITICAL RULE:
+          If the user wants to perform an action on a specific website (like Codeforces, GitHub, Amazon, etc.) and you are currently on a search engine like Google, DO NOT type the user's goal into the search bar! 
+          Instead, you MUST use the "navigate" action to teleport directly to the official URL of that website.
           
           INSTRUCTIONS:
-          1. If the goal is fully achieved on this screen, return {"action": "finish"}.
-          2. Otherwise, find the target element and return its approximate center coordinates.
-          3. Normalize the coordinates to a 0-1000 scale, where (0,0) is the top-left corner, and (1000,1000) is the bottom-right corner.
+          1. TELEPORT: If you are not on the correct website, return {"action": "navigate", "url": "https://exact-website.com"}.
+          2. INTERACT: If you are already on the correct site, find the target element and return its coordinates (normalized to 0-1000 scale).
+          3. FINISH: If the goal is fully achieved, return finish.
           
           RETURN STRICTLY JSON ONLY:
+          {"action": "navigate", "url": "https://codeforces.com/register"}
+          OR
           {"action": "click", "x": 500, "y": 150, "description": "Login button"}
           OR
-          {"action": "type", "x": 500, "y": 300, "value": "test@mail.com", "description": "Email input"}
+          {"action": "type", "x": 500, "y": 300, "value": "test", "description": "Input field"}
           OR
           {"action": "finish"}
         `;
 
-        const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_API_KEY}`, {
+        const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_API_KEY}`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -225,11 +230,20 @@ export default function AIWebAgentApp() {
     const prompt = `
       ROLE: Autonomous Web Navigator. GOAL: "${goal}". URL: "${pageData.url}". Memory Note: ${knownMap}
       Elements: ${JSON.stringify(pageData.elements)}
-      RETURN JSON ONLY: {"action": "navigate", "url": "..."} OR {"action": "finish"} OR {"selector": "css", "action": "click" | "type", "value": "text"}
+      
+      CRITICAL RULE:
+      If the goal requires a specific website and you are currently on Google or a blank page, DO NOT type the goal into the search bar. You MUST use the "navigate" action to go directly to the target URL.
+      
+      RETURN JSON ONLY: 
+      {"action": "navigate", "url": "https://codeforces.com"} 
+      OR 
+      {"action": "finish"} 
+      OR 
+      {"selector": "css", "action": "click" | "type", "value": "text"}
     `;
 
     try {
-      const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_API_KEY}`, {
+      const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_API_KEY}`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }],
             safetySettings: [
@@ -239,6 +253,12 @@ export default function AIWebAgentApp() {
         })
       });
       const data = await response.json();
+      if (data.error) {
+          Alert.alert("Ошибка от Google", data.error.message);
+          setLoading(false);
+          stopAgent();
+          return;
+      }
       const rawText = data.candidates[0].content.parts[0].text;
       const jsonMatch = rawText.match(/\{[\s\S]*\}/);
       if (jsonMatch) executeAction(JSON.parse(jsonMatch[0]), false, false); 
